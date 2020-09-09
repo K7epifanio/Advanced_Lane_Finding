@@ -43,7 +43,6 @@ def mag_thresh(img, sobel_kernel=3, mag_thresh=(0, 255)):
     # Create a binary image of ones where threshold is met, zeros otherwise
     binary_output = np.zeros_like(gradmag)
     binary_output[(gradmag >= mag_thresh[0]) & (gradmag <= mag_thresh[1])] = 255
-
     # Return the binary image
     return binary_output
 

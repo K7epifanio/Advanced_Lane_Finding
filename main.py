@@ -4,11 +4,11 @@ from calibration import calib
 from threshold import gradient_combine, hls_combine, comb_result
 from finding_lines import Line, warp_image, find_LR_lines, draw_lane, print_road_status, print_road_map
 
-# input_type = 'image' #'video' or 'image'
+# input_type = 'image' #'image'
 # input_name = 'test_images/straight_lines1.jpg' # 'challenge_video.mp4'
 
-input_type = 'video' #'video' or 'image'
-input_name = 'challenge_video.mp4' #'test_images/straight_lines1.jpg' # 'challenge_video.mp4'
+input_type = 'video' #'video'
+input_name = 'project_video.mp4' # 'challenge_video.mp4'
 
 left_line = Line()
 right_line = Line()
@@ -49,71 +49,70 @@ if __name__ == '__main__':
         # Combine the result with the original image
         result = cv2.addWeighted(undist_img, 1, comb_result, 0.3, 0)
         cv2.imshow('result',result)
-
         cv2.waitKey(0)
 
     elif input_type == 'video':
         cap = cv2.VideoCapture(input_name)
         while (cap.isOpened()):
-            _, frame = cap.read()
+            ret, frame = cap.read()
+            if ret == True:
 
-            # Correcting for Distortion
-            undist_img =cv2.undistort(frame, mtx, dist, None, mtx)
-            # resize video
-            undist_img = cv2.resize(undist_img, None, fx=1 / 2, fy=1 / 2, interpolation=cv2.INTER_AREA)
-            rows, cols = undist_img.shape[:2]
+                # Correcting for Distortion
+                undist_img =cv2.undistort(frame, mtx, dist, None, mtx)
+                # resize video
+                undist_img = cv2.resize(undist_img, None, fx=1 / 2, fy=1 / 2, interpolation=cv2.INTER_AREA)
+                rows, cols = undist_img.shape[:2]
 
-            combined_gradient = gradient_combine(undist_img, th_sobelx, th_sobely, th_mag, th_dir)
-            #cv2.imshow('gradient combined image', combined_gradient)
+                combined_gradient = gradient_combine(undist_img, th_sobelx, th_sobely, th_mag, th_dir)
+                #cv2.imshow('gradient combined image', combined_gradient)
+                combined_hls = hls_combine(undist_img, th_h, th_l, th_s)
+                #cv2.imshow('HLS combined image', combined_hls)
+                combined_result = comb_result(combined_gradient, combined_hls)
 
-            combined_hls = hls_combine(undist_img, th_h, th_l, th_s)
-            #cv2.imshow('HLS combined image', combined_hls)
+                c_rows, c_cols = combined_result.shape[:2]
+                s_LTop2, s_RTop2 = [c_cols / 2 - 24, 5], [c_cols / 2 + 24, 5]
+                s_LBot2, s_RBot2 = [110, c_rows], [c_cols - 110, c_rows]
 
-            combined_result = comb_result(combined_gradient, combined_hls)
+                src = np.float32([s_LBot2, s_LTop2, s_RTop2, s_RBot2])
+                dst = np.float32([(170, 720), (170, 0), (550, 0), (550, 720)])
 
-            c_rows, c_cols = combined_result.shape[:2]
-            s_LTop2, s_RTop2 = [c_cols / 2 - 24, 5], [c_cols / 2 + 24, 5]
-            s_LBot2, s_RBot2 = [110, c_rows], [c_cols - 110, c_rows]
+                warp_img, M, Minv = warp_image(combined_result, src, dst, (720, 720))
+                #cv2.imshow('warp', warp_img)
 
-            src = np.float32([s_LBot2, s_LTop2, s_RTop2, s_RBot2])
-            dst = np.float32([(170, 720), (170, 0), (550, 0), (550, 720)])
+                searching_img = find_LR_lines(warp_img, left_line, right_line)
+                #cv2.imshow('LR searching', searching_img)
 
-            warp_img, M, Minv = warp_image(combined_result, src, dst, (720, 720))
-            #cv2.imshow('warp', warp_img)
+                w_comb_result, w_color_result = draw_lane(searching_img, left_line, right_line)
+                #cv2.imshow('w_comb_result', w_comb_result)
 
-            searching_img = find_LR_lines(warp_img, left_line, right_line)
-            #cv2.imshow('LR searching', searching_img)
+                # Drawing the lines back down onto the road
+                color_result = cv2.warpPerspective(w_color_result, Minv, (c_cols, c_rows))
+                lane_color = np.zeros_like(undist_img)
+                lane_color[220:rows - 12, 0:cols] = color_result
 
-            w_comb_result, w_color_result = draw_lane(searching_img, left_line, right_line)
-            #cv2.imshow('w_comb_result', w_comb_result)
+                # Combine the result with the original image
+                result = cv2.addWeighted(undist_img, 1, lane_color, 0.3, 0)
+                #cv2.imshow('result', result.astype(np.uint8))
 
-            # Drawing the lines back down onto the road
-            color_result = cv2.warpPerspective(w_color_result, Minv, (c_cols, c_rows))
-            lane_color = np.zeros_like(undist_img)
-            lane_color[220:rows - 12, 0:cols] = color_result
+                info, info2 = np.zeros_like(result),  np.zeros_like(result)
+                info[5:110, 5:190] = (255, 255, 255)
+                info2[5:110, cols-111:cols-6] = (255, 255, 255)
+                info = cv2.addWeighted(result, 1, info, 0.2, 0)
+                info2 = cv2.addWeighted(info, 1, info2, 0.2, 0)
+                road_map = print_road_map(w_color_result, left_line, right_line)
+                info2[10:105, cols-106:cols-11] = road_map
+                info2 = print_road_status(info2, left_line, right_line)
+                cv2.imshow('road info', info2)
 
-            # Combine the result with the original image
-            result = cv2.addWeighted(undist_img, 1, lane_color, 0.3, 0)
-            #cv2.imshow('result', result.astype(np.uint8))
-
-            info, info2 = np.zeros_like(result),  np.zeros_like(result)
-            info[5:110, 5:190] = (255, 255, 255)
-            info2[5:110, cols-111:cols-6] = (255, 255, 255)
-            info = cv2.addWeighted(result, 1, info, 0.2, 0)
-            info2 = cv2.addWeighted(info, 1, info2, 0.2, 0)
-            road_map = print_road_map(w_color_result, left_line, right_line)
-            info2[10:105, cols-106:cols-11] = road_map
-            info2 = print_road_status(info2, left_line, right_line)
-            cv2.imshow('road info', info2)
-
-            # out.write(frame)
-            if cv2.waitKey(1) & 0xFF == ord('s'):
-                cv2.waitKey(0)
-            #if cv2.waitKey(1) & 0xFF == ord('r'):
-            #    cv2.imwrite('check1.jpg', undist_img)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+                # out.write(frame)
+                if cv2.waitKey(1) & 0xFF == ord('s'):
+                    cv2.waitKey(0)
+                #if cv2.waitKey(1) & 0xFF == ord('r'):
+                #    cv2.imwrite('check1.jpg', undist_img)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            else:
                 break
-
         cap.release()
         cv2.destroyAllWindows()
 
